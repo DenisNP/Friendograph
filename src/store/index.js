@@ -7,29 +7,17 @@ import {
 
 Vue.use(Vuex);
 
-let rateLimitReqs = 0;
-setInterval(() => { rateLimitReqs = 0; }, 1000);
-async function apiTimeout(method, params, onDone) {
-    if (rateLimitReqs >= 3) {
-        setTimeout(() => { apiTimeout(method, params, onDone); }, 350);
-        return;
-    }
-    rateLimitReqs++;
-    const result = true; // await VKC.api(method, params);
-
-    if (result.error && result.error.error_code === 6) { // too many reqs
-        apiTimeout(method, params, onDone);
-        return;
-    }
-    // rateLimitReqs--;
-    onDone(result);
-}
+const requestDelay = 500;
+const friendsChunkSize = 25;
 
 export default new Vuex.Store({
     state: {
         userId: '463377',
         isLoading: false,
         friends: [],
+        lastTimeLoaded: 0,
+        lastIndexToLoad: 0,
+        lastError: '',
     },
     getters: {
         totalFriends(state) {
@@ -55,6 +43,15 @@ export default new Vuex.Store({
         setLoadedFriends(state, loadedFriends) {
             state.loadedFriends = loadedFriends;
         },
+        setLastError(state, error) {
+            state.lastError = error;
+        },
+        setLastIndexToLoad(state, idx) {
+            state.lastIndexToLoad = idx;
+        },
+        setLastTimeLoaded(state, time) {
+            state.lastTimeLoaded = time;
+        },
     },
     actions: {
         init({ commit, dispatch }) {
@@ -76,52 +73,102 @@ export default new Vuex.Store({
             // start loading friends
             dispatch('loadAllFriends');
         },
-        async loadAllFriends({ commit, dispatch }) {
+        async loadAllFriends({ state, commit, dispatch }) {
             commit('setIsLoading', true);
-            // console.log();
-            // console.log(VKC.api('execute', { key: 'code', value: 'return API.friends.get();' }));
-            const friends = await VKC.api('friends.get');
-            console.log(friends[0].response.items);
-
-            dispatch('startLoadingFriends', friends[0].response.items);
-            // загрузить список друзей пользователя, считая, что права уже даны
-            // VKC.api('friends.get', ....)
-            // удалить заблокированных и удалённых
-            // записать друзей во friends
-            // запустить startLoadingFriends
-        },
-        async startLoadingFriends({ commit }, friends) {
-            console.log(friends);
-            // const friendsOfFriends = {};
-            // friends.forEach(async (id) => {
-            //     friendsOfFriends[id] = await VKC.api('friends.get', { user_id: id });
-            // });
-
-            const fullResult = [];
-
-            for (let i = 0; i < friends.length; i += 1) {
-                apiTimeout('friends.get', {
-                    user_id: friends[i],
-                    // const friendsOfFriends = apiTimeout('execute', {
-                    //     code:`
-                    //     var items = {${freinds.slice(i, i + 25).join(',')}};
-                    //     var i = 0;
-                    //     var result = [];
-                    //     while (i < items.length) {
-                    //     var f = API.friends.get({user_id: items[i], count: 5000}).items;
-                    //     result.push(f);
-                    //     i = i + 1;
-                    //     }
-                    //     return result;
-                    //     `
-                }, (result) => { fullResult.push(result); console.log('request'); });
+            commit('setLastError', '');
+            const [friends] = await VKC.api('friends.get', { fields: 'photo_50', count: 5000 });
+            if (!friends || !friends.response || !friends.response) {
+                commit('setLastError', 'Ошибка при загрузке друзей');
+                return;
             }
-            console.log(fullResult); // нельзя await
 
-            // с помощью execute загружать друзей друзей пачками по 10 или сколько позволит execute
-            // дописывать каждому другу его айдишники друзей в поле friends
+            commit('setFriends', friends.response.items.filter((f) => !f.deactivated));
 
-            commit('setIsLoading', false);
+            // set start index to load chunks
+            let startFrom = 0;
+
+            // load stored friends
+            const storedData = localStorage.getItem('friends');
+            if (storedData) {
+                const data = JSON.parse(storedData);
+                commit('setLastTimeLoaded', data.time);
+                const storedFriends = data.friends;
+                storedFriends.forEach((sf) => {
+                    const friend = state.friends.find((f) => f.id === sf.id);
+                    if (friend) {
+                        friend.friends = sf.friends;
+                    }
+                });
+
+                // count if need to add
+                const friendsLoaded = state.friends.filter((f) => !!f.friends);
+                const friendsNotLoaded = state.friends.filter((f) => !f.friends);
+
+                commit('setFriends', [...friendsLoaded, ...friendsNotLoaded]);
+                startFrom = friendsLoaded.length;
+            }
+
+            dispatch('loadNextChunk', startFrom);
+        },
+        async loadNextChunk({ state, commit, dispatch }, startFrom) {
+            if (startFrom !== -1) commit('setLastIndexToLoad', startFrom);
+
+            if (state.lastIndexToLoad < state.friends.length) {
+                // load next chunk
+                const chunk = state.friends.slice(
+                    state.lastIndexToLoad,
+                    state.lastIndexToLoad + friendsChunkSize,
+                );
+
+                const ids = chunk.map((f) => f.id);
+
+                const code = `
+                    var items = [${ids.join(',')}];
+
+                    var i = 0;
+                    var result = [];
+                    while (i < items.length) {
+                        var f = API.friends.get({user_id: items[i], count: 3000}).items;
+                        result.push(f);
+                        i = i + 1;
+                    }
+
+                    return result;`;
+
+                const requestStartTime = (new Date()).getTime();
+                const [r] = await VKC.api('execute', { code });
+                const requestEndTime = (new Date()).getTime();
+
+                // parse response
+                if (!r || !r.response || r.response.length !== ids.length) {
+                    commit('setIsLoading', false);
+                    commit('setLastError', 'Ошибка при загрузке друзей друзей');
+                    return;
+                }
+
+                // write friends of friends to friends objects
+                for (let i = 0; i < r.response.length; i++) {
+                    const friend = state.friends.find((f) => f.id === ids[i]);
+                    friend.friends = r.response[i];
+                }
+
+                // write friends to localstorage
+                dispatch('writeFriends', 0);
+
+                // load next chunk
+                state.lastIndexToLoad -= -friendsChunkSize;
+                const delay = Math.max(1, requestDelay - (requestEndTime - requestStartTime));
+                setTimeout(() => {
+                    dispatch('loadNextChunk', -1);
+                }, delay);
+            } else {
+                commit('setIsLoading', false);
+            }
+        },
+        writeFriends({ state, commit }, time) {
+            const data = { friends: state.friends, time };
+            localStorage.setItem('friends', JSON.stringify(data));
+            commit('setLastTimeLoaded', time);
         },
     },
 });
