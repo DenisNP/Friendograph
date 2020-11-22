@@ -15,6 +15,7 @@ export default new Vuex.Store({
         userId: '463377',
         isLoading: false,
         friends: [],
+        loadedFriends: 0,
         lastTimeLoaded: 0,
         lastIndexToLoad: 0,
         lastError: '',
@@ -22,9 +23,6 @@ export default new Vuex.Store({
     getters: {
         totalFriends(state) {
             return state.friends.length;
-        },
-        loadedFriends(state) {
-            return state.friends.filter((f) => !!f.friends).length;
         },
     },
     mutations: {
@@ -51,6 +49,9 @@ export default new Vuex.Store({
         },
         setLastTimeLoaded(state, time) {
             state.lastTimeLoaded = time;
+        },
+        updateLoadedFriends(state) {
+            state.loadedFriends = state.friends.filter((f) => !!f.friends).length;
         },
     },
     actions: {
@@ -105,6 +106,7 @@ export default new Vuex.Store({
                 const friendsNotLoaded = state.friends.filter((f) => !f.friends);
 
                 commit('setFriends', [...friendsLoaded, ...friendsNotLoaded]);
+                commit('updateLoadedFriends');
                 startFrom = friendsLoaded.length;
             }
 
@@ -151,6 +153,7 @@ export default new Vuex.Store({
                     const friend = state.friends.find((f) => f.id === ids[i]);
                     friend.friends = r.response[i];
                 }
+                commit('updateLoadedFriends');
 
                 // write friends to localstorage
                 dispatch('writeFriends', 0);

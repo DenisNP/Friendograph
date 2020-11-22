@@ -2,16 +2,20 @@
     <div id="app">
         <head-selector/>
         <friends-loader/>
+        <div class="graph">
+            <full-clusters class="graph-inside"/>
+        </div>
     </div>
 </template>
 
 <script>
 import FriendsLoader from '@/components/FriendsLoader.vue';
 import HeadSelector from '@/components/HeadSelector.vue';
+import FullClusters from '@/graphs/FullClusters.vue';
 
 export default {
     name: 'App',
-    components: { HeadSelector, FriendsLoader },
+    components: { FullClusters, HeadSelector, FriendsLoader },
     mounted() {
         this.$store.dispatch('init');
     },
@@ -41,5 +45,24 @@ body {
     padding: 0;
     width: 100%;
     height: 100%;
+}
+
+#app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.graph {
+    position: relative;
+    height: 100%;
+}
+
+.graph-inside {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
 }
 </style>
