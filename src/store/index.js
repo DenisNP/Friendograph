@@ -7,6 +7,24 @@ import {
 
 Vue.use(Vuex);
 
+let rateLimitReqs = 0;
+setInterval(() => { rateLimitReqs = 0; }, 1000);
+async function apiTimeout(method, params, onDone) {
+    if (rateLimitReqs >= 3) {
+        setTimeout(() => { apiTimeout(method, params, onDone); }, 350);
+        return;
+    }
+    rateLimitReqs++;
+    const result = true; // await VKC.api(method, params);
+
+    if (result.error && result.error.error_code === 6) { // too many reqs
+        apiTimeout(method, params, onDone);
+        return;
+    }
+    // rateLimitReqs--;
+    onDone(result);
+}
+
 export default new Vuex.Store({
     state: {
         userId: '463377',
@@ -58,15 +76,48 @@ export default new Vuex.Store({
             // start loading friends
             dispatch('loadAllFriends');
         },
-        async loadAllFriends({ commit }) {
+        async loadAllFriends({ commit, dispatch }) {
             commit('setIsLoading', true);
+            // console.log();
+            // console.log(VKC.api('execute', { key: 'code', value: 'return API.friends.get();' }));
+            const friends = await VKC.api('friends.get');
+            console.log(friends[0].response.items);
+
+            dispatch('startLoadingFriends', friends[0].response.items);
             // загрузить список друзей пользователя, считая, что права уже даны
             // VKC.api('friends.get', ....)
             // удалить заблокированных и удалённых
             // записать друзей во friends
             // запустить startLoadingFriends
         },
-        async startLoadingFriends({ commit }) {
+        async startLoadingFriends({ commit }, friends) {
+            console.log(friends);
+            // const friendsOfFriends = {};
+            // friends.forEach(async (id) => {
+            //     friendsOfFriends[id] = await VKC.api('friends.get', { user_id: id });
+            // });
+
+            const fullResult = [];
+
+            for (let i = 0; i < friends.length; i += 1) {
+                apiTimeout('friends.get', {
+                    user_id: friends[i],
+                    // const friendsOfFriends = apiTimeout('execute', {
+                    //     code:`
+                    //     var items = {${freinds.slice(i, i + 25).join(',')}};
+                    //     var i = 0;
+                    //     var result = [];
+                    //     while (i < items.length) {
+                    //     var f = API.friends.get({user_id: items[i], count: 5000}).items;
+                    //     result.push(f);
+                    //     i = i + 1;
+                    //     }
+                    //     return result;
+                    //     `
+                }, (result) => { fullResult.push(result); console.log('request'); });
+            }
+            console.log(fullResult); // нельзя await
+
             // с помощью execute загружать друзей друзей пачками по 10 или сколько позволит execute
             // дописывать каждому другу его айдишники друзей в поле friends
 
