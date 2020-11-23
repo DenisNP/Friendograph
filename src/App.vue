@@ -40,7 +40,7 @@ html,
 body {
     position: fixed;
     overflow: hidden;
-    background-color: #19191a;
+    background-color: #3a2e4a;
     margin: 0;
     padding: 0;
     width: 100%;

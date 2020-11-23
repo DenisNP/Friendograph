@@ -65,6 +65,8 @@ export const getNumericPhrase = (num, one, few, many) => {
     return postfix;
 };
 
+export const numericPhraseWithText = (num, one, few, many) => `${num} ${getNumericPhrase(num, one, few, many)}`;
+
 export const shuffle = (a) => {
     for (let i = a.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));

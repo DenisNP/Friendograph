@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@denisnp/vkui-connect-helper": "^0.1.9",
+    "@fortawesome/fontawesome-free": "^5.15.1",
     "core-js": "^3.6.5",
+    "d3": "^6.2.0",
     "vue": "^2.6.11",
     "vuex": "^3.4.0"
   },
